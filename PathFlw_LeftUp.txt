@@ -1,0 +1,13 @@
+{"x1":68, "y1":0, "x2":159, "y2":48, "length":103, "magnitude":42, "theta":118, "rho":-32}
+{"x1":88, "y1":0, "x2":159, "y2":49, "length":86, "magnitude":45, "theta":125, "rho":-51}
+{"x1":79, "y1":0, "x2":159, "y2":48, "length":93, "magnitude":43, "theta":121, "rho":-41}
+{"x1":74, "y1":0, "x2":159, "y2":49, "length":98, "magnitude":44, "theta":120, "rho":-37}
+{"x1":91, "y1":0, "x2":159, "y2":53, "length":86, "magnitude":46, "theta":128, "rho":-56}
+{"x1":80, "y1":0, "x2":159, "y2":51, "length":94, "magnitude":45, "theta":123, "rho":-44}
+{"x1":104, "y1":0, "x2":159, "y2":51, "length":75, "magnitude":50, "theta":133, "rho":-71}
+{"x1":64, "y1":0, "x2":159, "y2":48, "length":106, "magnitude":42, "theta":117, "rho":-29}
+{"x1":96, "y1":0, "x2":159, "y2":52, "length":82, "magnitude":47, "theta":130, "rho":-62}
+{"x1":71, "y1":0, "x2":159, "y2":52, "length":102, "magnitude":44, "theta":121, "rho":-37}
+MicroPython: v1.15-r32 OpenMV: v4.0.2 HAL: v1.9.0 BOARD: OPENMV4-STM32H743
+Type "help()" for more information.
+>>> 

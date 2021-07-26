@@ -14,16 +14,17 @@ uart = pyb.UART(3, 19200)
 red_led   = pyb.LED(1)
 green_led = pyb.LED(2)
 blue_led  = pyb.LED(3)
-
 clock = time.clock()
 
-flagHoverHeight = 1 # 开始定高标志位
+flagHoverHeight = 0 # 开始定高标志位
 flagStartCrclDect = 0 # 开始寻找起飞位置
 flagHoverOnCrclTime = 0 # 开始悬停计时
 flagStartTiming = 0 # 未计时标志位
-flagPathFollowing = 0 # 开始循迹
+flagPathFollowing = 1 # 开始循迹
+
 HOVERTIME = 15000 # 最大停留时间
 HOVERTH = (0.06, 0.08) # 认为悬停在中心的阈值(width, height) ,越小越苛刻
+PATHTH = (0, 18, -10, 15, -15, 15)
 height_pid = PID(p=0.7, i=0, imax=90) # 优先水平方向对齐
 width_pid = PID(p=0.7, i=0, imax=90)  # 再垂直方向对齐
 
@@ -47,7 +48,7 @@ while(True):
         print('正在寻找悬停位置')
         img = sensor.snapshot().lens_corr(strength = 1.8)
         crcls = img.find_circles(threshold = 1500, x_margin = 10,
-            y_margin = 10, r_margin = 20, r_min = 20)
+            y_margin = 10, r_margin = 20, r_min = 22)
         if crcls:
             blue_led.off()
             flagStartCrclDect = 0 # 寻找结束并记录基准圆位置
@@ -65,7 +66,7 @@ while(True):
         # -----------------继续定位起飞地点-------------------
         img = sensor.snapshot().lens_corr(strength = 1.8)
         crcls = img.find_circles(threshold = 2300, x_margin = 10,
-            y_margin = 10, r_margin = 2, r_min = 17)
+            y_margin = 10, r_margin = 2, r_min = 22)
         if crcls: # 找到一个或多个圆
            crd_crcl.x = crcls[0][0] # 默认记录第一个
            crd_crcl.y = crcls[0][1]
@@ -117,6 +118,10 @@ while(True):
     if  flagPathFollowing:
         red_led.on()
         print('开始循迹, 同时检测火灾')
-        img = sensor.snapshot().lens_corr(strength = 1.8)
-        continue
+        sensor.set_pixformat(sensor.RGB565)
+        img = sensor.snapshot().lens_corr(strength = 1.8).binary([PATHTH])
+        line = img.get_regression([(100, 100)], robust = True)
+        print(line)
+        img.draw_line(line.x1(), line.y1(), line.x2(), line.y2(), color = [255, 0 ,0])
+
     print(clock.fps())
