@@ -33,7 +33,7 @@ flagPathFollowing = 0 # 开始循迹
 
 HOVERTIME = 15000 # 最大停留时间
 HOVERTH = (0.06, 0.08) # 认为悬停在中心的阈值(width, height) ,越小越苛刻
-PATHTH = (18, 71, -20, 11, -10, 27)
+PATHTH = (22, 71, -41, 35, -27, 29)
 height_pid = PID(p=0.7, i=0, imax=90) # 优先水平方向对齐
 width_pid = PID(p=0.7, i=0, imax=90)  # 再垂直方向对齐
 
@@ -54,10 +54,22 @@ crd_crcl = crdOfCrcl(x=0, y=0, r=0) # 初始化圆的参数
 
 while(True):
     clock.tick()
-    # img = sensor.snapshot().lens_corr(strength = 1.8)
+    img = sensor.snapshot().lens_corr(strength = 1.8)
+    img.find_edges()
+    '''
     img = sensor.snapshot().lens_corr(strength = 1.8).binary([PATHTH], invert = True)
+    # img.mean(1)
     line = img.get_regression([(100, 100)], robust = True)
+    if line.rho() < 0: # 左转识别
+    else: # 后飞|前飞|起飞识别|后飞识别|飞出区域
+        if line.theta() < 45: # 后飞|前飞
+            if line.rho() > sensor.width()/2: # 前飞
+                send_direction_packet(G, 20)
+            else: # 后飞
+                send_direction_packet(B, 20)
+        elif line.theta() < 90: # 起飞识别|后飞识别
+            if line.rho() >
     img.draw_rectangle(20, 20, 120, 80, color = [0, 255, 0])
-    print(line)
     if line:
         img.draw_line(line.x1(), line.y1(), line.x2(), line.y2(), color = [255, 0 ,0])
+    '''

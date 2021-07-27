@@ -109,10 +109,11 @@ while (socket_success == 0):
         print("socket error: ", e)
 #.......................................................................#
 
+flagHoverHeight = 0
+flagStartCrclDect = 1
+
 while(True):
     clock.tick()
-    flagHoverHeight = 0
-    flagStartCrclDect = 1
     while(flagHoverHeight): # 开始定高
         if  uart.readchar() == H:
             flagHoverHeight = 0 # 定高结束
@@ -135,9 +136,11 @@ while(True):
             blue_led.on()
             flagHoverOnCrclTime = 0 # 关闭悬停时间等待
             # 应当调整无人机位置或改变参数等尝试找圆
+
 # -----------------开始驶向圆心----------------------
     if  flagHoverOnCrclTime: # 如果悬停时间未达到15s
         print('正在调整无人机的位置')
+
         # -----------------继续定位起飞地点-------------------
         img = sensor.snapshot().lens_corr(strength = 1.8)
         crcls = img.find_circles(threshold = 2300, x_margin = 10,
@@ -151,15 +154,18 @@ while(True):
         else: # 没有找到圆 默认输出上一个
            img.draw_circle(crd_crcl.x, crd_crcl.y, crd_crcl.r, color = (255, 0, 0))
            img.draw_cross(crd_crcl.x, crd_crcl.y, color = (255, 0, 0))
+
          # -----------------开始应用PID矫正位置------------------
         width_error = abs((crd_crcl.x - sensor.width()/2))/sensor.width()
-        width_output = int(width_pid.get_pid(width_error, 25)) # 最大速度1m/s
+        width_output = int(width_pid.get_pid(width_error, 50)) # 最大速度1m/s
+        print(width_output)
         if crd_crcl.x - sensor.width()/2 > 0:
             send_direction_packet(L, width_output)
         else:
             send_direction_packet(R, width_output)
         height_error = (crd_crcl.y - sensor.height()/2)/sensor.height()
-        height_output = int(height_pid.get_pid(height_error, 25)) # 最大速度1m/s
+        height_output = int(height_pid.get_pid(height_error, 50)) # 最大速度1m/s
+        print(height_output)
         if crd_crcl.y - sensor.height()/2 > 0:
             send_direction_packet(B, height_output)
         else:
@@ -167,6 +173,7 @@ while(True):
         # output_str = "[%d, %d]" % (output_width, output_height) #PID结果是一个浮点数，待修改
         # str_output = [width_output, height_output]
         # print(str_output)
+
          # -----------------判断是否悬停在起飞地点的上方并超过15秒--------------
         img.draw_rectangle(int((1/2-HOVERTH[0])*sensor.width()), int((1/2-HOVERTH[1])*sensor.height()),
            int(2*HOVERTH[0]*sensor.width()), int(2*HOVERTH[1]*sensor.height())) # 中心区域
@@ -193,14 +200,16 @@ while(True):
             # flagHoverOnCrcl = 0 # 不执行正在悬停模块
             print('未到达悬停位置')
            # print(clock.fps())
+
 # ----------------开始循迹-------------------------
     if  flagPathFollowing:
+        send_direction_packet(E, 0)
+        break
         red_led.on()
         print('开始循迹, 同时检测火灾')
-        img = sensor.snapshot().lens_corr(strength = 1.8).binary([PATHTH], invert = True)
+        img = sensor.snapshot().lens_corr(strength = 1.8).binary([PATHTH], invert = False)
         line = img.get_regression([(100, 100)], robust = True)
-        print(line)
         img.draw_line(line.x1(), line.y1(), line.x2(), line.y2(), color = [255, 0 ,0])
 
-    send_frame(img)
-    print(clock.fps())
+    send_frame(img) # WIFI发送实时图像
+    # print(clock.fps())
