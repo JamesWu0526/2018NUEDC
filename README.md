@@ -66,7 +66,62 @@ LED颜色与动作对应表
 | 飞出区域   | >0       | >90         | 直线飞出                 |
 | 检测到火源 |          |             | 中断，前往火源处执行灭火 |
 
+## status与前进方式
+
++ status 0：还未识别到进入巡线
+
+  以`send_direction_packet(G, 15) ` 的前进速度前进，直到`ROIPLACE_MID` 中的`get_regression`产生的`line`的角度是否在90度左右
+
+
+
+
+
+
+
 ## 地毯扫描式
 
 地毯扫描式从起飞开始
+
+
+
+## 飞行实验
+
+### 实验一  验证从高速降为悬停会不会产生自振动
+
++ 验证方式：
+
+  ```python
+  while(True):
+      while(flag):
+          if uart.any():
+              if uart.readchar() == H:
+                  flag = 0
+  
+      green_led.on()
+      send_direction_packet(G, velocity[0])
+      pyb.delay(5000)
+      green_led.off()
+  
+      green_led.on()
+      send_direction_packet(S, 0)
+      pyb.delay(5000)
+      green_led.off()
+  
+  
+      green_led.on()
+      send_direction_packet(B, velocity[0])
+      pyb.delay(5000)
+      green_led.off()
+  
+      green_led.on()
+      send_direction_packet(S, 0)
+      pyb.delay(5000)
+      green_led.off()
+  
+      send_direction_packet(E, 0)
+  ```
+
+  以15cm/s速度前进2s后悬停5s然后再以15cm/s速度后退2s后悬停5s
+
+  + 实验结果：15cm/s的速度不会使得悬停后有较大的改变
 
