@@ -134,7 +134,6 @@ tolHoverTime = 0
 REACTIONTIME = 0 # 飞行器指令响应时间：REACTIONTIMEms
 height_pid = PID(p=0.8, i=0, imax=90) # 水平方向PID参数
 width_pid = PID(p=0.8, i=0, imax=90)  # 垂直方向PID参数
-yaw_pid = PID(p = 0.8, i=0, imax=90) # 偏航方向PID参数
 
 while(True):
     clock.tick()

@@ -29,16 +29,16 @@ clock = time.clock()
 HongWai = pyb.Pin("P9", pyb.Pin.OUT_PP)
 Bizzar = pyb.Pin("P6", pyb.Pin.OUT_PP)
 
-flagHoverHeight = 1 # 开始定高标志位
+flagHoverHeight = 0 # 开始定高标志位
 flagStartCrclDect = 0 # 开始寻找起飞位置
 flagPathFollowing = 1 # 开始循迹
-networkStart = 1 # 开启网络回传
+networkStart = 0 # 开启网络回传
 
 def Bizzar_ON():
-    Bizzar.value(1)
+    Bizzar.value(0)
 
 def Bizzar_OFF():
-    Bizzar.value(0)
+    Bizzar.value(1)
 
 def Hongwai_ON():
     HongWai.value(0)
@@ -52,17 +52,26 @@ def send_direction_packet(direct, velocity): # 封包函数，只取八位
     temp_flow = struct.pack("<BBBBhB", 0xAA, 0x89, 03, direct, velocity, s)
     uart.write(temp_flow)
 
+def send_direction_packet_yaw(direct, velocity): # 封包函数，只取八位
+    s = 0xAA + 0x98 + 03 + direct + (int(velocity/256)) + (int(velocity%256))
+    s = int(s % 256)
+    temp_flow = struct.pack("<BBBBhB", 0xAA, 0x98, 03, direct, velocity, s)
+    uart.write(temp_flow)
+
 def saturation(inputValue, thresholds):
     if abs(inputValue) >= thresholds:
         return thresholds
     else:
         return abs(int(inputValue))
 
-def line_to_sin_rho(line):
+def line_to_cos_rho(line):
     if line.rho() <0: # 3|4象限
-        return math.sin(math.radians(line.theta() + 180)), abs(line.rho())
+        return math.cos(math.radians(270 - line.theta())), -line.rho()
     else:
-        return math.sin(math.radians(line.theta())), line.rho()
+        if line.theta() > 90:
+            return math.cos(math.radians(270 - line.theta())), line.rho()
+        else:
+            return math.cos(math.radians(90 - line.theta())), line.rho()
 
 Bizzar_OFF()
 Hongwai_OFF()
@@ -139,7 +148,7 @@ while(flagHoverHeight): # 开始定高
 
 #--------------总参数--------------#
 MAXSPEED = 5
-REACTIONTIME = 100 # 飞行器指令响应时间：REACTIONTIMEms
+REACTIONTIME = 0 # 飞行器指令响应时间：REACTIONTIMEms
 #--------------悬停参数--------------#
 HOVERTIME = 15000 # 最大停留时间
 HOVERTH = (0.09, 0.12, 0.06, 0.08) # [允许计时范围, 允许悬停范围] ,越小越苛刻
@@ -147,8 +156,9 @@ tolHoverTime = 0
 flagStartTiming = 0 # 未计时标志位
 height_pid = PID(p=0.8, i=0, imax=90) # 水平方向PID参数
 width_pid = PID(p=0.8, i=0, imax=90)  # 垂直方向PID参数
+yaw_pid = PID(p=0.8, i=0, imax=90)    # 偏航方向PID参数
 #--------------循迹参数---------------#
-PATHTH = (67, 168) # 识别直线的阈值
+PATHTH = (115, 255) # 识别直线的阈值
 ROIPLACE_UP = (0, 12, 160, 8)
 ROIPLACE_DOWN = (0, 100, 160, 8)
 ROIPLACE_MID = (0, 32, 160, 56)
@@ -238,26 +248,43 @@ while(True):
         img = sensor.snapshot().lens_corr(strength = 1.8).binary([PATHTH], invert = True)
         img.erode(1, threshold = 3)
         if status == 0: # 前进到进入点
-            send_direction_packet(G, MAXSPEED) # 以5cm/s的速度前进
+            send_direction_packet(S, 0) #悬停
+            # send_direction_packet(G, MAXSPEED) # 以5cm/s的速度前进
+            lines = img.find_lines(x_stride = 5, y_stride = 2, threshold = 2200,
+                theta_margin = 10, rho_margin = 10)
+            if lines:
+                line = lines[0]
+                cos, rho = line_to_cos_rho(line)
+                yaw_error = 1 - abs(cos)
+                yaw_output = yaw_pid.get_pid(yaw_error, 10)
+                # 矫正偏航
+                if cos > 0: # 无人机向前进方向右侧偏
+                    send_direction_packet_yaw(F, saturation(yaw_output, MAXSPEED))
+                    print('矫正方向：逆时针，偏航速度：', yaw_output)
+                else:
+                    send_direction_packet_yaw(C, saturation(yaw_output, MAXSPEED))
+                    print('矫正方向：顺时针，偏航速度：', yaw_output)
+                pyb.delay(REACTIONTIME)
+            '''
             line = img.get_regression([(255, 255)], roi = ROIPLACE_DOWN, robust = True)
             stat_down = img.get_statistics([(0, 255)], roi = ROIPLACE_DOWN)
             if line:
-                sin, rho = line_to_sin_rho(line)
-                if abs(sin) >= 0.98 and stat_down.mean()/255 >= 0.4: # 已经前进到进入点
+                cos, rho = line_to_cos_rho(line)
+                if abs(cos) >= 0.98 and stat_down.mean() > 110: # 已经前进到进入点
                     status = 1 # 正式进入循迹， 开始对齐右侧。
                     send_direction_packet(S, 0)
                     pyb.delay(REACTIONTIME) # 悬停一秒钟缓冲
             else:
                 print(str(status) + '未找到线')
         elif status == 1: # 矫正进入点
-            line = img.get_regression([(255, 255)], roi = ROIPLACE_MID)
+            line = img.get_regression([(255, 255)], roi = ROIPLACE_MID, robust = True)
             if line: # 矫正横向进入位置
-                # sin, rho = line_to_sin_rho(line)
-                # if sin > 0.05: # 需要进行偏航矫正
+                # cos, rho = line_to_cos_rho(line)
+                # if cos > 0.05: # 需要进行偏航矫正
                     # continue
                 width_error = ((LINE_RIGHT[0] - (line.x1() + line.x2())/2))/80
                 width_output = width_pid.get_pid(width_error, 10)
-                if abs(width_error) < 3/80: # 右侧循迹线处于可接受范围
+                if abs(width_error) < 8/80: # 右侧循迹线处于可接受范围
                     send_direction_packet(G, MAXSPEED) # 继续前进
                 else:
                     send_direction_packet(G, 0) # 右侧循迹线处于不可接受范围
@@ -267,6 +294,7 @@ while(True):
                         send_direction_packet(L, saturation(width_output, MAXSPEED))
                     pyb.delay(REACTIONTIME)
                     # 暂时不考虑无人机在进行左右移动时会前后运动
+                img.draw_line(line.x1(), line.y1(), line.x2(), line.y2(), color = 255)
             line = img.get_regression([(255, 255)], roi = ROIPLACE_UP, robust = True)
             stat_up = img.get_statistics([(0, 255)], roi = ROIPLACE_UP)
             if line and stat_up.mean()/255 >= 0.4: # 顶部已经检测到直线并且不是干扰
@@ -274,12 +302,12 @@ while(True):
         elif status == 2: # 进入前进位置
             send_direction_packet(E, 0) # 降落
         string = 'status:' + str(status)
-        img.draw_string(80, 60, string, color = 255)
+        img.draw_string(80, 60, string, color = 255, mono_space = False)
         img.draw_rectangle(ROIPLACE_UP)
         img.draw_rectangle(ROIPLACE_DOWN)
         img.draw_rectangle(ROIPLACE_MID)
         img.draw_rectangle(ROIPLACE_LEFT)
         img.draw_rectangle(ROIPLACE_RIGHT)
-
+        '''
     if networkStart:
         send_frame(img) # WIFI发送实时图像
