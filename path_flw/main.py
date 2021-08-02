@@ -36,6 +36,9 @@ HOVERTH = (0.06, 0.08) # 认为悬停在中心的阈值(width, height) ,越小�
 PATHTH = (67, 168)
 height_pid = PID(p=0.8, i=0, imax=90) # 优先水平方向对齐
 width_pid = PID(p=0.8, i=0, imax=90)  # 再垂直方向对齐
+yaw_pid = PID(p = 0.8, i=0, imax=90) # 偏航方向PID参数
+REACTIONTIME = 0 # 指令执行时间
+MAXSPEED = 5
 
 def send_direction_packet(direct, velocity): # 封包函数，只取八位
     s = 0xAA + 0x8C + direct + (int(velocity/256)) + (int(velocity%256))
@@ -49,6 +52,12 @@ def line_to_sin_rho(line):
     else:
         return math.sin(math.radians(line.theta())), line.rho()
 
+def saturation(inputValue, thresholds):
+    if abs(inputValue) >= thresholds:
+        return thresholds
+    else:
+        return abs(int(inputValue))
+
 # ------------目前的识别模式-------------
 # 模式一
 # RGB565下配合 binary(PATHTH), PATHTH = (29, 69, -16, 13, -12, 29)
@@ -60,66 +69,66 @@ def line_to_sin_rho(line):
 # ensor.set_auto_whitebal(False)
 # 目前的结果发现首先利用GRAYSCALE再配合binary来实现将会更加稳定。
 # 再利用erode来进行噪点消除
-ROI_WIDTH = ROI_WIDTH
-ROIPLACE_UP = (0, 20-ROI_WIDTH/2, 160, ROI_WIDTH)
-ROIPLACE_DOWN = (0, 100-ROI_WIDTH/2, 160, ROI_WIDTH)
-ROIPLACE_MID = (0, 60-ROI_WIDTH/2, 160, ROI_WIDTH)
-ROIPLACE_RIGHT = (140-ROI_WIDTH/2, 0, ROI_WIDTH, 120)
-ROIPLACE_LEFT = (20-ROI_WIDTH/2, 0, ROI_WIDTH, 120)
-ROIPLACE_UP_ALL = (0, 0, 160, 60-ROI_WIDTH/2)
-# LINE_UP, LINE_LEFT, LINE_DOWN
-LINE_RIGHT = (140, 1, 140, 120)
+ROIPLACE_UP = (0, 12, 160, 8)
+ROIPLACE_DOWN = (0, 100, 160, 8)
+ROIPLACE_MID = (0, 32, 160, 56)
+ROIPLACE_LEFT = (12, 0, 8, 120)
+ROIPLACE_RIGHT = (140, 0, 8, 120)
+LINE_RIGHT = (ROIPLACE_RIGHT[0] + ROIPLACE_RIGHT[2]/2, ROIPLACE_RIGHT[1],
+    ROIPLACE_RIGHT[0] + ROIPLACE_RIGHT[2]/2, ROIPLACE_RIGHT[3])
 status = 0
 # 状态0：还未识别到中间位置
+# while(True):
+    # img = sensor.snapshot().lens_corr(strength = 1.8)
 
 while(True):
-    clock.tick()
     # img = sensor.snapshot().lens_corr(strength = 1.8)
     img = sensor.snapshot().lens_corr(strength = 1.8).binary([PATHTH], invert = True)
     img.erode(1, threshold = 3)
     if status == 0: # 前进到进入点
-        send_direction_packet(G, 5) # 以5cm/s的速度前进
-        line = img.get_regression([(255, 255)], roi = ROIPLACE_MID)
-        if line:
-            sin, rho = line_to_sin_rho(line)
-            print(sin)
-            if abs(sin) >= 0.98: # 已经前进到进入点
+        send_direction_packet(G, MAXSPEED) # 以5cm/s的速度前进
+        lines = img.find_lines(x_stride = 5, y_stride = 2, threshold = 2200,
+            theta_margin = 20, rho_margin = 5):
+        stat_down = img.get_statistics([(0, 255)], roi = ROIPLACE_DOWN)
+        if lines:
+            line = lines[0]
+            if abs(sin) >= 0.98 and stat_down.mean()/255 >= 0.4: # 已经前进到进入点
                 status = 1 # 正式进入循迹， 开始对齐右侧。
                 send_direction_packet(S, 0)
-                pyb.delay(0) # 悬停一秒钟缓冲
+                pyb.delay(REACTIONTIME) # 悬停一秒钟缓冲
         else:
             print(str(status) + '未找到线')
     elif status == 1: # 矫正进入点
-        send_direction_packet(S, 0)
-        line = img.get_regression([(255, 255)], roi = ROIPLACE_UP_ALL)
-        img.draw_line(line.x1(), line.y1(), line.x2(), line.y2(), color = 255)
+        line = img.get_regression([(255, 255)], roi = ROIPLACE_MID)
         if line: # 矫正横向进入位置
-            sin, rho = line_to_sin_rho(line)
-
-    '''
-    elif status == 1:
-        line = img.get_regression([(255, 255)], robust = True, roi = ROIPLACE_UP_ALL)
-        if line:
-            width_error = (line.x1() + line.x2())/2 - LINE_RIGHT[0]
-            if abs(width_error) > 5:
-                width_output = width_pid.get_pid(width_error, 25)
-                if width_error > 0:
-                    send_direction_packet(L, width_output)
-                else:
-                    send_direction_packet(R, width_output)
+            img.draw_line(line.x1(), line.y1(), line.x2(), line.y2(), color = 255)
+            width_error = (LINE_RIGHT[0] - (line.x1() + line.x2())/2)
+            width_output = width_pid.get_pid(width_error, 1)
+            if abs(width_error) < 3: # 右侧循迹线处于可接受范围
+                send_direction_packet(G, MAXSPEED) # 继续前进
             else:
-                status = 2 # 进入右侧巡线飞行阶段
-        else:
-            print('巡线错误' + str(status) + '未找到线')
-    elif status == 2:
-        line = img.get_regression([(255, 255)], robust = True, roi = ROIPLACE_RIGHT)
+                send_direction_packet(G, 0) # 右侧循迹线处于不可接受范围
+                if width_error > 0:
+                    send_direction_packet(R, saturation(width_output, MAXSPEED))
+                else:
+                    send_direction_packet(L, saturation(width_output, MAXSPEED))
+                pyb.delay(REACTIONTIME)
+                # 暂时不考虑无人机在进行左右移动时会前后运动
+        line = img.get_regression([(255, 255)], roi = ROIPLACE_UP)
+        stat_up = img.get_statistics([(0, 255)], roi = ROIPLACE_UP)
+        if line and stat_up.mean()/255 >= 0.4: # 顶部已经检测到直线并且不是干扰
+            status = 2
+
+    elif status == 2: # 进入前进位置
+        send_direction_packet(E, 0) # 降落
     print(status)
-    '''
     img.draw_rectangle(ROIPLACE_UP)
     img.draw_rectangle(ROIPLACE_DOWN)
     img.draw_rectangle(ROIPLACE_MID)
     img.draw_rectangle(ROIPLACE_LEFT)
     img.draw_rectangle(ROIPLACE_RIGHT)
+    '''
     # a, b = line_to_theta_and_rho_error(line, img)
     # print(a, b)
     # print(line)
+    '''
